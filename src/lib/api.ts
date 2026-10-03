@@ -2,6 +2,8 @@
 // then sends the secret token it got with every scan. The token only adds products to that till's cart.
 
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://business-be-p3bx.onrender.com/api/v1').replace(/\/$/, '')
+/** The SIRIS web app (for "continue on the web"), e.g. https://siris.vercel.app */
+export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || '').replace(/\/$/, '')
 
 export class ApiError extends Error {
   status: number
@@ -51,8 +53,11 @@ export type ScannerSession = {
   pairedAt: number | null
 }
 
+/** What the phone may do besides scanning into the cart (only when the person at the till may do it). */
+export type PhoneAction = 'register_product'
+
 /** The till this phone scans for, and the secret token that proves it (kept in the phone's secure storage). */
-export type Pairing = { businessId: string; businessName: string; session: ScannerSession; token: string }
+export type Pairing = { businessId: string; businessName: string; session: ScannerSession; token: string; actions: PhoneAction[] }
 
 export type Scan = { id: string; barcode: string; itemKey: string; productName: string; createdAt: number }
 
@@ -70,7 +75,9 @@ export const pairWithTill = (code: string, scannerName: string) =>
 
 const sessionPath = (pairing: Pairing) => `/pos/scanner/${pairing.businessId}/${pairing.session.id}`
 
-export const getSession = (pairing: Pairing) => api<ScannerSession>(sessionPath(pairing), 'GET', undefined, pairing.token)
+/** Still connected? And what may the phone do now (the till's permissions can change). */
+export const getSession = (pairing: Pairing) =>
+  api<{ session: ScannerSession; actions: PhoneAction[] }>(sessionPath(pairing), 'GET', undefined, pairing.token)
 
 export const disconnect = (pairing: Pairing) => api<void>(sessionPath(pairing), 'DELETE', undefined, pairing.token)
 
@@ -84,3 +91,20 @@ function today(): string {
 /** Puts the product with this barcode in the till's cart (it is not sold until the cashier charges). */
 export const sendScan = (pairing: Pairing, barcode: string) =>
   api<Scan>(`${sessionPath(pairing)}/scans?date=${today()}`, 'POST', { barcode }, pairing.token)
+
+// ---- Registering a product ---------------------------------------------------------------------------
+
+/** Is this barcode already a product? (productName is "" when it is not.) */
+export const lookupBarcode = (pairing: Pairing, barcode: string) =>
+  api<{ barcode: string; productName: string }>(`${sessionPath(pairing)}/lookup?barcode=${encodeURIComponent(barcode)}`, 'GET', undefined, pairing.token)
+
+export type NewProduct = { productName: string; barcode: string; unit: string; price: number; costPrice: number | null; stock: number }
+
+/** Registers the product, in the name of the person signed in on the till. */
+export const registerProduct = (pairing: Pairing, product: NewProduct) =>
+  api<{ productId: string; productName: string }>(`${sessionPath(pairing)}/products`, 'POST', product, pairing.token)
+
+/** The web app's products page with "Add product" open and the barcode filled in (it asks to sign in first). */
+export const webAddProductUrl = (pairing: Pairing, barcode: string) =>
+  `${WEB_URL}/business/${pairing.businessId}/products?add=1&barcode=${encodeURIComponent(barcode)}`
+

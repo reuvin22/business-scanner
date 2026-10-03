@@ -1,0 +1,315 @@
+import { CameraView, type BarcodeType } from 'expo-camera'
+import * as Haptics from 'expo-haptics'
+import { Redirect, router } from 'expo-router'
+import { useRef, useState } from 'react'
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import CameraGate from '@/components/CameraGate'
+import { lookupBarcode, registerProduct, WEB_URL, webAddProductUrl } from '@/lib/api'
+import { useAppSession } from '@/lib/session'
+import { base, useColors } from '@/lib/theme'
+
+const BARCODE_TYPES: BarcodeType[] = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'code93', 'itf14', 'codabar']
+
+type Step = 'scan' | 'choose' | 'form' | 'done'
+
+/**
+ * Options → Register product: scan the new product's barcode, then finish here on the phone (name, price, stock)
+ * or on the web app (it opens "Add product" with the barcode filled in). Only offered when the person signed in
+ * on the till may manage products (e.g. the owner or an admin).
+ */
+export default function RegisterProduct() {
+  const colors = useColors()
+  const { pairing } = useAppSession()
+  const [step, setStep] = useState<Step>('scan')
+  const [barcode, setBarcode] = useState('')
+  const [typed, setTyped] = useState('')
+  const [taken, setTaken] = useState('') // the product that already has this barcode
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState('')
+  const [form, setForm] = useState({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
+  const reading = useRef(false) // the camera reports a barcode many times a second: read it once
+
+  if (!pairing) return <Redirect href="/pair" />
+  if (!(pairing.actions ?? []).includes('register_product')) return <Redirect href="/scan" />
+  const current = pairing
+
+  async function check(code: string) {
+    const value = code.trim()
+    if (!value || reading.current) return
+    reading.current = true
+    setBusy(true)
+    setError('')
+    setTaken('')
+    try {
+      const found = await lookupBarcode(current, value)
+      setBarcode(value)
+      if (found.productName) {
+        setTaken(found.productName)
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+        setStep('choose')
+      }
+    } catch (err) {
+      setError((err as Error).message)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+    } finally {
+      setBusy(false)
+      setTimeout(() => (reading.current = false), 1200)
+    }
+  }
+
+  function restart() {
+    setStep('scan')
+    setBarcode('')
+    setTyped('')
+    setTaken('')
+    setError('')
+    setSaved('')
+    setForm({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
+  }
+
+  async function openWeb() {
+    if (!WEB_URL) {
+      setError('The web app address is not set in this app (EXPO_PUBLIC_WEB_URL). Finish on this phone instead.')
+      return
+    }
+    await Linking.openURL(webAddProductUrl(current, barcode))
+  }
+
+  const number = (text: string) => (text.trim() === '' ? null : Number(text.replace(',', '.')))
+  const price = number(form.price)
+  const cost = number(form.costPrice)
+  const stock = number(form.stock)
+  const valid =
+    form.productName.trim() !== '' &&
+    price !== null &&
+    !Number.isNaN(price) &&
+    price >= 0 &&
+    (cost === null || (!Number.isNaN(cost) && cost >= 0)) &&
+    (stock === null || (!Number.isNaN(stock) && stock >= 0))
+
+  async function save() {
+    if (!valid || price === null) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await registerProduct(current, {
+        productName: form.productName.trim(),
+        barcode,
+        unit: form.unit.trim() || 'pcs',
+        price,
+        costPrice: cost,
+        stock: stock ?? 0,
+      })
+      setSaved(result.productName)
+      setStep('done')
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    } catch (err) {
+      setError((err as Error).message)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const input = [base.input, { backgroundColor: colors.surface, borderColor: colors.line, color: colors.heading }]
+  const label = { color: colors.heading, fontWeight: '700' as const, marginBottom: -6 }
+  const primary = [base.button, { backgroundColor: colors.accent }]
+  const secondary = [base.button, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }]
+
+  return (
+    <SafeAreaView style={[base.screen, { backgroundColor: colors.side }]} edges={['top', 'bottom']}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>Register product</Text>
+          <Text style={{ color: '#c9c9c3', fontSize: 13 }} numberOfLines={1}>
+            {current.businessName}
+          </Text>
+        </View>
+        <Pressable onPress={() => router.replace('/scan')} hitSlop={10}>
+          <Text style={{ color: colors.lime, fontWeight: '700' }}>Back to scanning</Text>
+        </Pressable>
+      </View>
+
+      {step === 'scan' && (
+        <View style={{ height: 280, marginHorizontal: 12, borderRadius: 18, overflow: 'hidden' }}>
+          <CameraGate>
+            <CameraView
+              style={{ flex: 1 }}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES }}
+              onBarcodeScanned={busy || taken ? undefined : ({ data }) => check(data)}
+            />
+            {busy && (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#0008',
+                }}
+              >
+                <ActivityIndicator color={colors.lime} size="large" />
+              </View>
+            )}
+          </CameraGate>
+        </View>
+      )}
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView
+          style={{ flex: 1, marginTop: 12, backgroundColor: colors.page, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
+          contentContainerStyle={base.padded}
+          keyboardShouldPersistTaps="handled"
+        >
+          {!!error && <Text style={{ color: colors.danger, fontWeight: '600' }}>{error}</Text>}
+
+          {step === 'scan' && (
+            <>
+              <Text style={[base.hint, { color: colors.text }]}>Scan the new product’s barcode, or type it.</Text>
+              {!!taken && (
+                <View style={{ backgroundColor: colors.dangerSoft, padding: 12, borderRadius: 12, gap: 8 }}>
+                  <Text style={{ color: colors.heading, fontWeight: '700' }}>
+                    {barcode} is already registered: {taken}
+                  </Text>
+                  <Pressable style={secondary} onPress={restart}>
+                    <Text style={[base.buttonText, { color: colors.heading }]}>Scan another</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  style={[input, { flex: 1 }]}
+                  placeholder="Barcode"
+                  placeholderTextColor={colors.muted}
+                  autoCorrect={false}
+                  value={typed}
+                  onChangeText={setTyped}
+                  onSubmitEditing={() => check(typed)}
+                />
+                <Pressable style={[primary, { paddingHorizontal: 18 }]} disabled={!typed.trim() || busy} onPress={() => check(typed)}>
+                  <Text style={[base.buttonText, { color: '#fff' }]}>Next</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {step === 'choose' && (
+            <>
+              <Text style={{ color: colors.muted }}>Barcode</Text>
+              <Text style={{ color: colors.heading, fontSize: 22, fontWeight: '800', letterSpacing: 1 }}>{barcode}</Text>
+              <Text style={[base.hint, { color: colors.text }]}>Where do you want to finish registering it?</Text>
+              <Pressable style={primary} onPress={() => setStep('form')}>
+                <Text style={[base.buttonText, { color: '#fff' }]}>On this phone</Text>
+              </Pressable>
+              <Text style={[base.hint, { color: colors.muted, marginTop: -6 }]}>Name, price, and starting stock. Quick.</Text>
+              <Pressable style={secondary} onPress={openWeb}>
+                <Text style={[base.buttonText, { color: colors.heading }]}>On the web app</Text>
+              </Pressable>
+              <Text style={[base.hint, { color: colors.muted, marginTop: -6 }]}>
+                Opens SIRIS in the browser (sign in if asked): Products → Add product opens with this barcode filled in. For photos,
+                variants, and every detail.
+              </Text>
+              <Pressable onPress={restart}>
+                <Text style={[base.link, { color: colors.accent, textAlign: 'center' }]}>Scan a different barcode</Text>
+              </Pressable>
+            </>
+          )}
+
+          {step === 'form' && (
+            <>
+              <Text style={{ color: colors.muted }}>Barcode: {barcode}</Text>
+              <Text style={label}>Product name *</Text>
+              <TextInput
+                style={input}
+                value={form.productName}
+                onChangeText={(productName) => setForm({ ...form, productName })}
+                placeholder="e.g. Pan de sal (10 pcs)"
+                placeholderTextColor={colors.muted}
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1, gap: 14 }}>
+                  <Text style={label}>Selling price *</Text>
+                  <TextInput
+                    style={input}
+                    value={form.price}
+                    onChangeText={(value) => setForm({ ...form, price: value })}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={colors.muted}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 14 }}>
+                  <Text style={label}>Unit</Text>
+                  <TextInput
+                    style={input}
+                    value={form.unit}
+                    onChangeText={(unit) => setForm({ ...form, unit })}
+                    autoCapitalize="none"
+                    placeholder="pcs"
+                    placeholderTextColor={colors.muted}
+                  />
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1, gap: 14 }}>
+                  <Text style={label}>Cost price</Text>
+                  <TextInput
+                    style={input}
+                    value={form.costPrice}
+                    onChangeText={(costPrice) => setForm({ ...form, costPrice })}
+                    keyboardType="decimal-pad"
+                    placeholder="Optional"
+                    placeholderTextColor={colors.muted}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 14 }}>
+                  <Text style={label}>Stock here</Text>
+                  <TextInput
+                    style={input}
+                    value={form.stock}
+                    onChangeText={(value) => setForm({ ...form, stock: value })}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.muted}
+                  />
+                </View>
+              </View>
+              <Text style={[base.hint, { color: colors.muted }]}>
+                The stock goes to {current.session.locationName}. Photos, variants, and more can be added later on the web app.
+              </Text>
+              <Pressable style={[primary, { opacity: valid && !busy ? 1 : 0.6 }]} disabled={!valid || busy} onPress={save}>
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={[base.buttonText, { color: '#fff' }]}>Register product</Text>}
+              </Pressable>
+              <Pressable onPress={() => setStep('choose')}>
+                <Text style={[base.link, { color: colors.accent, textAlign: 'center' }]}>Back</Text>
+              </Pressable>
+            </>
+          )}
+
+          {step === 'done' && (
+            <>
+              <View style={{ backgroundColor: colors.upSoft, padding: 14, borderRadius: 12, gap: 4 }}>
+                <Text style={{ color: colors.heading, fontSize: 18, fontWeight: '800' }}>✓ {saved} is registered</Text>
+                <Text style={{ color: colors.text }}>It can be scanned and sold at the till right away.</Text>
+              </View>
+              <Pressable style={primary} onPress={restart}>
+                <Text style={[base.buttonText, { color: '#fff' }]}>Register another</Text>
+              </Pressable>
+              <Pressable style={secondary} onPress={() => router.replace('/scan')}>
+                <Text style={[base.buttonText, { color: colors.heading }]}>Back to scanning</Text>
+              </Pressable>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  )
+}

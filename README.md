@@ -27,11 +27,22 @@ Pairing is limited to 10 tries a minute per network address, so codes cannot be 
 The same barcode counts again once it has left the camera's view (move the phone away and back to scan two).
 Codes that will not scan can be typed.
 
+## Options → Register product
+
+Shown only when the person signed in on the till may manage products (e.g. the owner or an admin; checked again
+every time the app comes back to the screen). Scan the new product's barcode (already-registered barcodes are refused),
+then choose:
+
+- **On this phone**: name, selling price, unit, cost, and starting stock at the till's store. The product is saved in
+  the name of the person signed in on the till, and can be scanned and sold right away.
+- **On the web app**: opens `EXPO_PUBLIC_WEB_URL/business/<id>/products?add=1&barcode=<code>`. The web app asks to sign
+  in if needed, then opens Products → Add product with the barcode filled in.
+
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env        # the API address (no Firebase settings: the phone does not sign in)
+cp .env.example .env        # the API address and the web app address (no Firebase: the phone does not sign in)
 npx expo start              # scan the QR code with the Expo Go app on the phone
 ```
 

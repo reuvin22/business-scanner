@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as SecureStore from 'expo-secure-store'
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Platform } from 'react-native'
 import type { Pairing } from './api'
 
@@ -45,7 +45,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     storage.get(NAME_KEY).then((saved) => setPhoneNameState(saved ?? ''), () => undefined)
   }, [])
 
-  async function setPairing(next: Pairing | null) {
+  // Stable functions: screens use them in effects
+  const setPairing = useCallback(async (next: Pairing | null) => {
     setPairingState(next)
     try {
       if (next) await storage.set(PAIRING_KEY, JSON.stringify(next))
@@ -53,12 +54,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // Not kept: the phone pairs again next time
     }
-  }
+  }, [])
 
-  function setPhoneName(name: string) {
+  const setPhoneName = useCallback((name: string) => {
     setPhoneNameState(name)
     storage.set(NAME_KEY, name).catch(() => undefined)
-  }
+  }, [])
 
   return <SessionContext.Provider value={{ pairing, setPairing, phoneName, setPhoneName }}>{children}</SessionContext.Provider>
 }

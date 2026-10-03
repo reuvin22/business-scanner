@@ -49,13 +49,14 @@ export default function ScanScreen() {
     if (!pairing) return
     const check = () =>
       getSession(pairing).then(
-        () => undefined,
+        // What the phone may do can change (e.g. the person at the till got the products permission)
+        ({ actions }) => (actions.join() !== (pairing.actions ?? []).join() ? setPairing({ ...pairing, actions }) : undefined),
         (err) => (isDisconnected(err) ? disconnected((err as Error).message) : undefined), // offline: try again later
       )
     check()
     const subscription = AppState.addEventListener('change', (state) => state === 'active' && check())
     return () => subscription.remove()
-  }, [pairing, disconnected])
+  }, [pairing, disconnected, setPairing])
 
   if (!pairing) return <Redirect href="/pair" />
   const current = pairing
@@ -118,6 +119,11 @@ export default function ScanScreen() {
             {current.session.locationName} · till of {current.session.tillName || 'the cashier'}
           </Text>
         </View>
+        {(current.actions ?? []).includes('register_product') && !ended && (
+          <Pressable onPress={() => router.replace('/register')} hitSlop={10} style={[styles.chip, { backgroundColor: colors.lime }]}>
+            <Text style={{ color: colors.ink, fontWeight: '800' }}>Options</Text>
+          </Pressable>
+        )}
         <Pressable onPress={disconnect} hitSlop={10}>
           <Text style={{ color: colors.lime, fontWeight: '700' }}>Disconnect</Text>
         </Pressable>
