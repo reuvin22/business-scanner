@@ -1,11 +1,11 @@
 import { CameraView, type BarcodeType } from 'expo-camera'
 import * as Haptics from 'expo-haptics'
 import { Redirect, router } from 'expo-router'
-import { useRef, useState } from 'react'
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import CameraGate from '@/components/CameraGate'
-import { lookupBarcode, registerProduct, WEB_URL, webAddProductUrl } from '@/lib/api'
+import { disconnect, getSession, isDisconnected, lookupBarcode, registerProduct, WEB_URL, webAddProductUrl } from '@/lib/api'
 import { useAppSession } from '@/lib/session'
 import { base, useColors } from '@/lib/theme'
 
@@ -20,7 +20,7 @@ type Step = 'scan' | 'choose' | 'form' | 'done'
  */
 export default function RegisterProduct() {
   const colors = useColors()
-  const { pairing } = useAppSession()
+  const { pairing, setPairing } = useAppSession()
   const [step, setStep] = useState<Step>('scan')
   const [barcode, setBarcode] = useState('')
   const [typed, setTyped] = useState('')
@@ -30,9 +30,23 @@ export default function RegisterProduct() {
   const [saved, setSaved] = useState('')
   const [form, setForm] = useState({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
   const reading = useRef(false) // the camera reports a barcode many times a second: read it once
+  const admin = pairing?.session.mode === 'admin'
+
+  // Still connected, and still allowed? (Checked when the screen opens and when the app comes back.)
+  useEffect(() => {
+    if (!pairing) return
+    const check = () =>
+      getSession(pairing).then(
+        ({ actions }) => (actions.join() !== (pairing.actions ?? []).join() ? setPairing({ ...pairing, actions }) : undefined),
+        (err) => (isDisconnected(err) ? setPairing(null) : undefined),
+      )
+    check()
+    const subscription = AppState.addEventListener('change', (state) => state === 'active' && check())
+    return () => subscription.remove()
+  }, [pairing, setPairing])
 
   if (!pairing) return <Redirect href="/pair" />
-  if (!(pairing.actions ?? []).includes('register_product')) return <Redirect href="/scan" />
+  if (!(pairing.actions ?? []).includes('register_product')) return <Redirect href={admin ? '/pair' : '/scan'} />
   const current = pairing
 
   async function check(code: string) {
@@ -69,6 +83,13 @@ export default function RegisterProduct() {
     setError('')
     setSaved('')
     setForm({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
+  }
+
+  /** Connected from the web app: ending it means pairing again later. */
+  async function leave() {
+    await disconnect(current).catch(() => undefined)
+    await setPairing(null)
+    router.replace('/pair')
   }
 
   async function openWeb() {
@@ -129,9 +150,15 @@ export default function RegisterProduct() {
             {current.businessName}
           </Text>
         </View>
-        <Pressable onPress={() => router.replace('/scan')} hitSlop={10}>
-          <Text style={{ color: colors.lime, fontWeight: '700' }}>Back to scanning</Text>
-        </Pressable>
+        {admin ? (
+          <Pressable onPress={leave} hitSlop={10}>
+            <Text style={{ color: colors.lime, fontWeight: '700' }}>Disconnect</Text>
+          </Pressable>
+        ) : (
+          <Pressable onPress={() => router.replace('/scan')} hitSlop={10}>
+            <Text style={{ color: colors.lime, fontWeight: '700' }}>Back to scanning</Text>
+          </Pressable>
+        )}
       </View>
 
       {step === 'scan' && (
@@ -303,9 +330,11 @@ export default function RegisterProduct() {
               <Pressable style={primary} onPress={restart}>
                 <Text style={[base.buttonText, { color: '#fff' }]}>Register another</Text>
               </Pressable>
-              <Pressable style={secondary} onPress={() => router.replace('/scan')}>
-                <Text style={[base.buttonText, { color: colors.heading }]}>Back to scanning</Text>
-              </Pressable>
+              {!admin && (
+                <Pressable style={secondary} onPress={() => router.replace('/scan')}>
+                  <Text style={[base.buttonText, { color: colors.heading }]}>Back to scanning</Text>
+                </Pressable>
+              )}
             </>
           )}
         </ScrollView>

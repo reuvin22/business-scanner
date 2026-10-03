@@ -44,6 +44,8 @@ async function api<T>(path: string, method = 'GET', body?: unknown, token?: stri
 
 export type ScannerSession = {
   id: string
+  /** "admin": connected from the web app to register products (no till cart to scan into) */
+  mode?: 'till' | 'admin'
   locationId: string
   locationName: string
   tillName: string
