@@ -98,15 +98,83 @@ export const sendScan = (pairing: Pairing, barcode: string) =>
 
 /** Is this barcode already a product? (productName is "" when it is not.) */
 export const lookupBarcode = (pairing: Pairing, barcode: string) =>
-  api<{ barcode: string; productName: string }>(`${sessionPath(pairing)}/lookup?barcode=${encodeURIComponent(barcode)}`, 'GET', undefined, pairing.token)
+  api<{ barcode: string; productName: string }>(
+    `${sessionPath(pairing)}/lookup?barcode=${encodeURIComponent(barcode)}`,
+    'GET',
+    undefined,
+    pairing.token,
+  )
 
-export type NewProduct = { productName: string; barcode: string; unit: string; price: number; costPrice: number | null; stock: number }
+/** The product form, the same as the web app's Add product (see business-be ProductFormIn), plus starting stock. */
+export type ProductForm = {
+  productName: string
+  sku: string
+  barcode: string
+  unit: string
+  categoryId: string | null
+  brandId: string | null
+  status: string
+  visibility: string
+  description: string
+  costPrice: number | null
+  orderRules: {
+    minimumOrderQuantity: number
+    maximumOrderQuantity: number | null
+    orderMultiple: number
+    minimumOrderValue: number | null
+    leadTimeDays: number | null
+    preorderAllowed: boolean
+  }
+  images: { imageUrl: string; mediaType: 'IMAGE' | 'VIDEO'; sortOrder: number; isPrimary: boolean }[]
+  specifications: { name: string; value: string }[]
+  variants: { key: string; variantName: string; sku: string; barcode: string; unit: string }[]
+  prices: {
+    priceType: string
+    price: number
+    currency: string
+    minimumQuantity: number
+    maximumQuantity: number | null
+    customerType: string | null
+    variantKey: string | null
+  }[]
+  stock: number
+}
 
 /** Registers the product, in the name of the person signed in on the till. */
-export const registerProduct = (pairing: Pairing, product: NewProduct) =>
+export const registerProduct = (pairing: Pairing, product: ProductForm) =>
   api<{ productId: string; productName: string }>(`${sessionPath(pairing)}/products`, 'POST', product, pairing.token)
+
+export type Choice = { value: string; label: string }
+
+/** The business's categories and brands for the form, and its currency. */
+export const getProductOptions = (pairing: Pairing) =>
+  api<{ categories: Choice[]; brands: Choice[]; currency: string }>(
+    `${sessionPath(pairing)}/product-options`,
+    'GET',
+    undefined,
+    pairing.token,
+  )
+
+/** Uploads a product photo or video taken on the phone. Returns its link. */
+export async function uploadPhoto(pairing: Pairing, file: { uri: string; name: string; type: string }) {
+  const body = new FormData()
+  // React Native sends a file given as { uri, name, type }
+  body.append('file', file as unknown as Blob)
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${sessionPath(pairing)}/images`, {
+      method: 'POST',
+      headers: { 'X-Scanner-Token': pairing.token },
+      body,
+    })
+  } catch {
+    throw new ApiError(0, 'No connection to SIRIS. Check the internet on this phone.')
+  }
+  const data: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw new ApiError(response.status, readError(data, `Could not upload the photo (${response.status})`))
+  return data as { url: string; mediaType: 'IMAGE' | 'VIDEO' }
+}
 
 /** The web app's products page with "Add product" open and the barcode filled in (it asks to sign in first). */
 export const webAddProductUrl = (pairing: Pairing, barcode: string) =>
   `${WEB_URL}/business/${pairing.businessId}/products?add=1&barcode=${encodeURIComponent(barcode)}`
-

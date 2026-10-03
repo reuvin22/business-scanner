@@ -33,7 +33,14 @@
           "barcodeScannerEnabled": true
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SIRIS Scanner to choose product photos from your gallery.",
+          "cameraPermission": "Allow SIRIS Scanner to take product photos and scan barcodes."
+        }
+      ]
     ],
     "scheme": "siris-scanner",
     "experiments": {

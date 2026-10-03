@@ -2,10 +2,22 @@ import { CameraView, type BarcodeType } from 'expo-camera'
 import * as Haptics from 'expo-haptics'
 import { Redirect, router } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import {
+  ActivityIndicator,
+  AppState,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import CameraGate from '@/components/CameraGate'
-import { disconnect, getSession, isDisconnected, lookupBarcode, registerProduct, WEB_URL, webAddProductUrl } from '@/lib/api'
+import ProductFormPhone from '@/components/ProductFormPhone'
+import { disconnect, getSession, isDisconnected, lookupBarcode, WEB_URL, webAddProductUrl } from '@/lib/api'
 import { useAppSession } from '@/lib/session'
 import { base, useColors } from '@/lib/theme'
 
@@ -28,7 +40,6 @@ export default function RegisterProduct() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
-  const [form, setForm] = useState({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
   const reading = useRef(false) // the camera reports a barcode many times a second: read it once
   const admin = pairing?.session.mode === 'admin'
 
@@ -82,7 +93,6 @@ export default function RegisterProduct() {
     setTaken('')
     setError('')
     setSaved('')
-    setForm({ productName: '', unit: 'pcs', price: '', costPrice: '', stock: '' })
   }
 
   /** Connected from the web app: ending it means pairing again later. */
@@ -100,44 +110,7 @@ export default function RegisterProduct() {
     await Linking.openURL(webAddProductUrl(current, barcode))
   }
 
-  const number = (text: string) => (text.trim() === '' ? null : Number(text.replace(',', '.')))
-  const price = number(form.price)
-  const cost = number(form.costPrice)
-  const stock = number(form.stock)
-  const valid =
-    form.productName.trim() !== '' &&
-    price !== null &&
-    !Number.isNaN(price) &&
-    price >= 0 &&
-    (cost === null || (!Number.isNaN(cost) && cost >= 0)) &&
-    (stock === null || (!Number.isNaN(stock) && stock >= 0))
-
-  async function save() {
-    if (!valid || price === null) return
-    setBusy(true)
-    setError('')
-    try {
-      const result = await registerProduct(current, {
-        productName: form.productName.trim(),
-        barcode,
-        unit: form.unit.trim() || 'pcs',
-        price,
-        costPrice: cost,
-        stock: stock ?? 0,
-      })
-      setSaved(result.productName)
-      setStep('done')
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    } catch (err) {
-      setError((err as Error).message)
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const input = [base.input, { backgroundColor: colors.surface, borderColor: colors.line, color: colors.heading }]
-  const label = { color: colors.heading, fontWeight: '700' as const, marginBottom: -6 }
   const primary = [base.button, { backgroundColor: colors.accent }]
   const secondary = [base.button, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }]
 
@@ -236,7 +209,9 @@ export default function RegisterProduct() {
               <Pressable style={primary} onPress={() => setStep('form')}>
                 <Text style={[base.buttonText, { color: '#fff' }]}>On this phone</Text>
               </Pressable>
-              <Text style={[base.hint, { color: colors.muted, marginTop: -6 }]}>Name, price, and starting stock. Quick.</Text>
+              <Text style={[base.hint, { color: colors.muted, marginTop: -6 }]}>
+                The same details as the web app: prices, variants, photos, and more.
+              </Text>
               <Pressable style={secondary} onPress={openWeb}>
                 <Text style={[base.buttonText, { color: colors.heading }]}>On the web app</Text>
               </Pressable>
@@ -251,74 +226,15 @@ export default function RegisterProduct() {
           )}
 
           {step === 'form' && (
-            <>
-              <Text style={{ color: colors.muted }}>Barcode: {barcode}</Text>
-              <Text style={label}>Product name *</Text>
-              <TextInput
-                style={input}
-                value={form.productName}
-                onChangeText={(productName) => setForm({ ...form, productName })}
-                placeholder="e.g. Pan de sal (10 pcs)"
-                placeholderTextColor={colors.muted}
-              />
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1, gap: 14 }}>
-                  <Text style={label}>Selling price *</Text>
-                  <TextInput
-                    style={input}
-                    value={form.price}
-                    onChangeText={(value) => setForm({ ...form, price: value })}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor={colors.muted}
-                  />
-                </View>
-                <View style={{ flex: 1, gap: 14 }}>
-                  <Text style={label}>Unit</Text>
-                  <TextInput
-                    style={input}
-                    value={form.unit}
-                    onChangeText={(unit) => setForm({ ...form, unit })}
-                    autoCapitalize="none"
-                    placeholder="pcs"
-                    placeholderTextColor={colors.muted}
-                  />
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1, gap: 14 }}>
-                  <Text style={label}>Cost price</Text>
-                  <TextInput
-                    style={input}
-                    value={form.costPrice}
-                    onChangeText={(costPrice) => setForm({ ...form, costPrice })}
-                    keyboardType="decimal-pad"
-                    placeholder="Optional"
-                    placeholderTextColor={colors.muted}
-                  />
-                </View>
-                <View style={{ flex: 1, gap: 14 }}>
-                  <Text style={label}>Stock here</Text>
-                  <TextInput
-                    style={input}
-                    value={form.stock}
-                    onChangeText={(value) => setForm({ ...form, stock: value })}
-                    keyboardType="decimal-pad"
-                    placeholder="0"
-                    placeholderTextColor={colors.muted}
-                  />
-                </View>
-              </View>
-              <Text style={[base.hint, { color: colors.muted }]}>
-                The stock goes to {current.session.locationName}. Photos, variants, and more can be added later on the web app.
-              </Text>
-              <Pressable style={[primary, { opacity: valid && !busy ? 1 : 0.6 }]} disabled={!valid || busy} onPress={save}>
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={[base.buttonText, { color: '#fff' }]}>Register product</Text>}
-              </Pressable>
-              <Pressable onPress={() => setStep('choose')}>
-                <Text style={[base.link, { color: colors.accent, textAlign: 'center' }]}>Back</Text>
-              </Pressable>
-            </>
+            <ProductFormPhone
+              pairing={current}
+              barcode={barcode}
+              onSaved={(name) => {
+                setSaved(name)
+                setStep('done')
+              }}
+              onBack={() => setStep('choose')}
+            />
           )}
 
           {step === 'done' && (
