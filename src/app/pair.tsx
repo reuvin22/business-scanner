@@ -30,7 +30,7 @@ export default function Pair() {
       const pairing = await pairWithTill(text, phoneName.trim())
       await setPairing(pairing)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      router.replace(pairing.session.mode === 'admin' ? '/register' : '/scan')
+      router.replace('/waiting') // the till must allow this phone first
     } catch (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       setError((err as Error).message)

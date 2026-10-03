@@ -16,6 +16,7 @@ export default function Start() {
     )
   }
   if (!pairing) return <Redirect href="/pair" />
+  if (!pairing.session.approved) return <Redirect href="/waiting" />
   // Connected from the web app: only registering products (there is no till cart to scan into)
   return <Redirect href={pairing.session.mode === 'admin' ? '/register' : '/scan'} />
 }

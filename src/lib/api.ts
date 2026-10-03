@@ -2,6 +2,10 @@
 // then sends the secret token it got with every scan. The token only adds products to that till's cart.
 
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://business-be-p3bx.onrender.com/api/v1').replace(/\/$/, '')
+
+/** The phone's secret token must never travel unencrypted: only https (plain http only to a computer on the same
+ * network, while developing). */
+const SAFE_API = /^https:\/\//.test(API_URL) || /^http:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(API_URL)
 /** The SIRIS web app (for "continue on the web"), e.g. https://siris.vercel.app */
 export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || '').replace(/\/$/, '')
 
@@ -24,6 +28,7 @@ function readError(body: unknown, fallback: string): string {
 }
 
 async function api<T>(path: string, method = 'GET', body?: unknown, token?: string): Promise<T> {
+  if (!SAFE_API) throw new ApiError(0, 'The SIRIS address in this app is not secure (it must start with https://).')
   let response: Response
   try {
     response = await fetch(`${API_URL}${path}`, {
@@ -46,6 +51,9 @@ export type ScannerSession = {
   id: string
   /** "admin": connected from the web app to register products (no till cart to scan into) */
   mode?: 'till' | 'admin'
+  /** The till (or web app) allowed this phone. Until then it can do nothing. */
+  approved?: boolean
+  allowRegister?: boolean
   locationId: string
   locationName: string
   tillName: string
@@ -157,6 +165,7 @@ export const getProductOptions = (pairing: Pairing) =>
 
 /** Uploads a product photo or video taken on the phone. Returns its link. */
 export async function uploadPhoto(pairing: Pairing, file: { uri: string; name: string; type: string }) {
+  if (!SAFE_API) throw new ApiError(0, 'The SIRIS address in this app is not secure (it must start with https://).')
   const body = new FormData()
   // React Native sends a file given as { uri, name, type }
   body.append('file', file as unknown as Blob)

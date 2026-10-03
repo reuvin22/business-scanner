@@ -27,6 +27,23 @@ Pairing is limited to 10 tries a minute per network address, so codes cannot be 
 The same barcode counts again once it has left the camera's view (move the phone away and back to scan two).
 Codes that will not scan can be typed.
 
+## Security
+
+- **The till must approve every phone.** Scanning the QR code is not enough: the till (or the web app) shows
+  "<phone> wants to connect" and the phone can do nothing until someone taps **Allow** (within 10 minutes). A QR code
+  photographed by a customer is useless. **Reject** ends the connection at once.
+- **Registering products is opt-in.** A till connection only scans into the cart unless the person starting it ticks
+  "Allow this phone to register products" (only shown to people who may manage products). Connections from the web
+  app are for registering only.
+- **Connections end by themselves:** after 30 minutes unused for phones that may register products (2 hours at
+  most), and after 2 hours unused for till scanners (12 hours at most). They also end when the person who connected
+  the phone leaves the team or loses the permission.
+- **Secrets:** the phone's token is kept in the phone's secure storage and only a hash of it on the server; each
+  till's id is also stored as a hash. The app only talks to an https address.
+- **Limits:** pairing is limited to 10 tries a minute per network address; phone requests are limited per phone and
+  per address.
+- **Audit:** products registered from a phone say so in the activity history (which phone, who connected it, where).
+
 ## Options → Register product
 
 Shown only when the person signed in on the till may manage products (e.g. the owner or an admin; checked again

@@ -57,6 +57,7 @@ export default function RegisterProduct() {
   }, [pairing, setPairing])
 
   if (!pairing) return <Redirect href="/pair" />
+  if (!pairing.session.approved) return <Redirect href="/waiting" />
   if (!(pairing.actions ?? []).includes('register_product')) return <Redirect href={admin ? '/pair' : '/scan'} />
   const current = pairing
 

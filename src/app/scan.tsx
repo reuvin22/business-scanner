@@ -59,6 +59,7 @@ export default function ScanScreen() {
   }, [pairing, disconnected, setPairing])
 
   if (!pairing) return <Redirect href="/pair" />
+  if (!pairing.session.approved) return <Redirect href="/waiting" />
   if (pairing.session.mode === 'admin') return <Redirect href="/register" />
   const current = pairing
 
